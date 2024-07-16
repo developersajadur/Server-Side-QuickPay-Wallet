@@ -5,47 +5,47 @@ require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 5000;
-const uri = process.env.MONGODB_URI;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
-// MongoDB Client
-const client = new MongoClient(uri, {
+// MongoDB URI from environment variables
+const mongoURI = process.env.MONGODB_URI;
+
+// Create a new MongoClient
+const client = new MongoClient(mongoURI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 });
 
-async function connectToMongoDB() {
-  try {
-    await client.connect();
-    console.log('Connected to MongoDB');
+// Connect to MongoDB
+client.connect()
+  .then(() => {
+    console.log("Connected to MongoDB");
 
-    // Optionally, ping MongoDB to confirm connection
-    await client.db('admin').command({ ping: 1 });
-    console.log('Ping successful');
 
-    // Example: Define routes or further setup MongoDB interactions here
-
-  } catch (err) {
-    console.error('Error connecting to MongoDB:', err);
-  }
-}
-
-// Run MongoDB connection
-connectToMongoDB();
-
-// Routes
+  // Database collections
+  const usersCollection =  client.db("QuickPayWallet").collection("users");
 
 
 
+    // Routes
+    app.get('/', (req, res) => {
+      res.send('QuickPay Wallet Server Is Running');
+    });
 
-app.get('/', (req, res) => {
-  res.send('QuickPay Wallet Server Is Running');
-});
+    // get all users
+    app.get("/users", async(req, res) => {
+        const allUsers = await usersCollection.find().toArray();
+        res.send(allUsers);
+    })
 
-// Start server
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-});
+    // Start server
+    app.listen(port, () => {
+      console.log(`Server is running on port ${port}`);
+    });
+  })
+  .catch(err => {
+    console.error("Error connecting to MongoDB:", err);
+  });
