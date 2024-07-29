@@ -90,23 +90,25 @@ client.connect()
       const token = generateToken(user);
       res.send({ token });
     });
+// Example of enhanced error handling in protected route
+app.get('/protected', (req, res) => {
+  const token = req.header('Authorization').replace('Bearer ', '');
 
-    // Protected route example
-    app.get('/protected', (req, res) => {
-      const token = req.header('Authorization').replace('Bearer ', '');
+  if (!token) {
+    return res.status(401).send('Unauthorized: No token provided');
+  }
 
-      if (!token) {
-        return res.status(401).send('Access denied');
-      }
-
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = decoded;
-        res.send('Protected data');
-      } catch (ex) {
-        res.status(400).send('Invalid token');
-      }
-    });
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    res.send('Token is valid');
+  } catch (ex) {
+    if (ex.name === 'TokenExpiredError') {
+      return res.status(401).send('Unauthorized: Token has expired');
+    }
+    res.status(400).send('Unauthorized: Token is invalid');
+  }
+});
 
     // Start server
     app.listen(port, () => {
