@@ -70,6 +70,82 @@ client.connect()
       const users = await usersCollection.find().toArray();
       res.send(users);
     });
+     // Get user by email
+  app.get("/users/:email", async (req, res) => {
+    const email = req.params.email;
+    const query = { email };
+    const result = await usersCollection.findOne(query);
+    res.send(result);
+  });
+
+  // ------------------------------
+  // Send Money
+app.post('/sendMoney', async (req, res) => {
+  const { receiverNumber, amount: amountStr, pin } = req.body;
+  const senderEmail = req.headers.email;
+
+  // Convert amount to number
+  const amount = Number(amountStr);
+  if (isNaN(amount)) {
+    return res.status(400).send('Invalid amount');
+  }
+
+  // Calculate fee if amount is over 100 Taka
+  const fee = amount > 100 ? 5 : 0;
+  const totalAmount = amount + fee;
+
+  try {
+    // Check if the sender and recipient exist
+    const sender = await usersCollection.findOne({ email: senderEmail });
+    const receiver = await usersCollection.findOne({ mobileNumber: receiverNumber });
+
+    if (!sender) {
+      return res.status(404).send('Sender not found');
+    }
+
+    if (!receiver) {
+      return res.status(404).send('Receiver not found');
+    }
+
+    // Verify the sender's PIN
+    const isMatch = await bcrypt.compare(pin, sender.pin);
+    if (!isMatch) {
+      return res.status(400).send('Invalid PIN');
+    }
+
+    // Check if sender has enough balance
+    if (sender.balance < totalAmount) {
+      return res.status(400).send('Insufficient balance');
+    }
+
+    // Update balances
+    await usersCollection.updateOne(
+      { email: senderEmail },
+      { $inc: { balance: -totalAmount } } 
+    );
+
+    await usersCollection.updateOne(
+      { mobileNumber: receiverNumber },
+      { $inc: { balance: amount } } 
+    );
+
+    res.send('Money sent successfully');
+  } catch (error) {
+    console.error('Error sending money:', error);
+    res.status(500).send('Server error');
+  }
+});
+
+  // ------------------------------
+
+     // // get user roles
+    // app.get('/users-roles', async (req, res) => {
+    //  const options = {
+    //    projection: { role: 1 }
+    //  }
+    //  const users = await usersCollection.find({}, options).toArray();
+    //   res.send(users);
+    // });
 
 
     // User login
