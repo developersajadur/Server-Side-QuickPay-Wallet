@@ -253,6 +253,105 @@ client.connect()
 
 
 
+
+  // ------------------------------
+  // Cash In Request-------
+  app.post('/cashInRequest', async (req, res) => {
+    const { amount: amountStr, agentNumber } = req.body;
+    const senderEmail = req.headers.email;
+  
+    // Convert amount to number
+    const amount = Number(amountStr);
+    if (isNaN(amount) || amount <= 0) {
+      return res.status(400).send('Invalid amount');
+    }
+  
+    try {
+      // Find the user and the agent by mobile number
+      const user = await usersCollection.findOne({ email: senderEmail });
+      const agent = await usersCollection.findOne({ mobileNumber: agentNumber, role: 'agent' });
+  
+      if (!user) {
+        return res.status(404).send('User not found');
+      }
+  
+      if (!agent) {
+        return res.status(404).send('Agent not found');
+      }
+  
+      // Create a cash-in request pending approval
+      const agentRequest = {
+        status: 'pending',
+        amount: amount,
+        date: new Date(),
+        fromUser: user.mobileNumber,
+      };
+  
+      await usersCollection.updateOne(
+        { mobileNumber: agentNumber },
+        { $push: { requests: agentRequest } }
+      );
+  
+      return res.status(200).send('Cash-in request submitted successfully');
+    } catch (error) {
+      console.error('Cash-in error:', error);
+      return res.status(500).send('Server error');
+    }
+  });
+  // -------------------------
+  // Endpoint for agent to approve cash-in request
+  app.post('/approveCashIn', async (req, res) => {
+    const { requestId } = req.body;
+    const agentEmail = req.headers.email;
+  
+    try {
+      const agent = await usersCollection.findOne({ email: agentEmail, role: 'agent' });
+  
+      if (!agent) {
+        return res.status(404).send('Agent not found');
+      }
+  
+      // Find the request and verify it's pending
+      const request = agent.requests.find(req => req._id.toString() === requestId && req.status === 'pending');
+  
+      if (!request) {
+        return res.status(404).send('Request not found or already processed');
+      }
+  
+      // Check if the agent has enough balance
+      if (agent.balance < request.amount) {
+        return res.status(400).send('Agent does not have enough balance');
+      }
+  
+      // Update user's balance and request status
+      const user = await usersCollection.findOneAndUpdate(
+        { mobileNumber: request.fromUser },
+        { $inc: { balance: request.amount } },
+        { new: true }
+      );
+  
+      if (!user) {
+        return res.status(404).send('User not found');
+      }
+  
+      // Deduct from agent's balance and update request status
+      request.status = 'approved';
+      agent.balance -= request.amount;
+  
+      await agent.save();
+  
+      return res.status(200).send('Cash-in approved successfully');
+    } catch (error) {
+      console.error('Approve cash-in error:', error);
+      return res.status(500).send('Server error');
+    }
+  });
+  // ------------------------------
+
+
+
+
+
     // User login
     app.post('/login', async (req, res) => {
       const { email, pin } = req.body;
