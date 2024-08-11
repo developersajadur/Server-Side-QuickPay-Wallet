@@ -347,6 +347,33 @@ client.connect()
     }
   });
   // ------------------------------
+  // ------------------------------
+  // 
+  app.post('/transactions', async (req, res) => {
+    const userEmail = req.headers.email;
+  
+    if (!userEmail) {
+      return res.status(400).send('Email is required');
+    }
+  
+    try {
+      // Find the user by email
+      const user = await usersCollection.findOne({ email: userEmail });
+      if (!user) {
+        return res.status(404).send('User not found');
+      }
+  
+      // Extract transactions from the user's data
+      const transactions = user.transactions || [];
+  
+      return res.status(200).json(transactions);
+    } catch (error) {
+      console.error('Error fetching transactions:', error);
+      return res.status(500).send('Server error');
+    }
+});
+
+  // ------------------------------
 
 
 
