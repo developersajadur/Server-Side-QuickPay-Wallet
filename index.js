@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { MongoClient } = require('mongodb');
+const { ObjectId } = require('mongodb');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
@@ -80,7 +81,8 @@ client.connect()
 
   // ------------------------------
   // Send Money
-app.post('/sendMoney', async (req, res) => {
+
+ app.post('/sendMoney', async (req, res) => {
   const { receiverNumber, amount: amountStr, pin } = req.body;
   const senderEmail = req.headers.email;
 
@@ -98,6 +100,7 @@ app.post('/sendMoney', async (req, res) => {
     // Check if the sender and recipient exist
     const sender = await usersCollection.findOne({ email: senderEmail });
     const receiver = await usersCollection.findOne({ mobileNumber: receiverNumber });
+    const senderNumber = sender.mobileNumber;
 
     if (!sender) {
       return res.status(404).send('Sender not found');
@@ -118,34 +121,136 @@ app.post('/sendMoney', async (req, res) => {
       return res.status(400).send('Insufficient balance');
     }
 
-    // Update balances
+    // Prepare transaction details
+    const transaction = {
+      date: new Date(),
+      receiverNumber,
+      amount,
+      fee,
+      totalAmount,
+      type: 'debit'
+    };
+
+    const receiverTransaction = {
+      date: new Date(),
+      senderNumber,
+      amount,
+      fee: 0, // No fee applied to the receiver
+      totalAmount: amount,
+      type: 'credit'
+    };
+
+    // Update sender's balance and transaction history
     await usersCollection.updateOne(
       { email: senderEmail },
-      { $inc: { balance: -totalAmount } } 
+      {
+        $inc: { balance: -totalAmount },
+        $push: { transactions: transaction }
+      }
     );
 
+    // Update receiver's balance and transaction history
     await usersCollection.updateOne(
       { mobileNumber: receiverNumber },
-      { $inc: { balance: amount } } 
+      {
+        $inc: { balance: amount },
+        $push: { transactions: receiverTransaction }
+      }
     );
 
-    res.send('Money sent successfully');
+    res.status(200).send('Money sent successfully');
   } catch (error) {
     console.error('Error sending money:', error);
     res.status(500).send('Server error');
   }
 });
-
+ 
   // ------------------------------
 
-     // // get user roles
-    // app.get('/users-roles', async (req, res) => {
-    //  const options = {
-    //    projection: { role: 1 }
-    //  }
-    //  const users = await usersCollection.find({}, options).toArray();
-    //   res.send(users);
-    // });
+
+  // ------------------------------
+  // Withdraw Money
+  app.post('/withdrawMoney', async (req, res) => {
+    const { senderId, agentNumber, amount: amountStr, pin } = req.body;
+    const senderEmail = req.headers.email;
+  
+    // Convert amount to number
+    const amount = Number(amountStr);
+    if (isNaN(amount) || amount <= 0) {
+      return res.status(400).send('Invalid amount');
+    }
+  
+    try {
+      // Find the user by ID and the agent by mobile number
+      const user = await usersCollection.findOne({  email: senderEmail });
+      const agent = await usersCollection.findOne({ mobileNumber: agentNumber, role: 'agent' });
+  
+      if (!user) {
+        return res.status(404).send('User not found');
+      }
+  
+      if (!agent) {
+        return res.status(404).send('Agent not found');
+      }
+  
+      // Verify the user's PIN
+      const isPinMatch = await bcrypt.compare(pin, user.pin);
+      if (!isPinMatch) {
+        return res.status(400).send('Invalid PIN');
+      }
+  
+      // Calculate the fee and total amount to deduct
+      const fee = (1.5 / 100) * amount;
+      const totalAmount = amount + fee;
+  
+      // Check if the user has enough balance
+      if (user.balance < totalAmount) {
+        return res.status(400).send('Insufficient balance');
+      }
+  
+      // Update user's balance and add transaction history
+      const userTransaction = {
+        type: 'withdraw',
+        toAgent: agent.mobileNumber,
+        amount,
+        fee,
+        date: new Date(),
+      };
+  
+      await usersCollection.updateOne(
+        {  email: senderEmail },
+        {
+          $inc: { balance: -totalAmount },
+          $push: { transactions: userTransaction }
+        }
+      );
+  
+      // Update agent's balance and add transaction history
+      const agentTransaction = {
+        type: 'deposit',
+        fromUser: user.mobileNumber,
+        amount: amount + fee,
+        fee,
+        date: new Date(),
+      };
+  
+      await usersCollection.updateOne(
+        { mobileNumber: agentNumber },
+        {
+          $inc: { balance: amount + fee },
+          $push: { transactions: agentTransaction }
+        }
+      );
+  
+      res.status(200).send('Withdraw successful');
+    } catch (error) {
+      console.error('Error processing withdrawal:', error);
+      res.status(500).send('Server error');
+    }
+  });
+  // ------------------------------
+
+
 
 
     // User login
