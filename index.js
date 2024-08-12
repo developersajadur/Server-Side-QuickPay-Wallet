@@ -298,55 +298,7 @@ client.connect()
       return res.status(500).send('Server error');
     }
   });
-  // -------------------------
-  // Endpoint for agent to approve cash-in request
-  app.post('/approveCashIn', async (req, res) => {
-    const { requestId } = req.body;
-    const agentEmail = req.headers.email;
-  
-    try {
-      const agent = await usersCollection.findOne({ email: agentEmail, role: 'agent' });
-  
-      if (!agent) {
-        return res.status(404).send('Agent not found');
-      }
-  
-      // Find the request and verify it's pending
-      const request = agent.requests.find(req => req._id.toString() === requestId && req.status === 'pending');
-  
-      if (!request) {
-        return res.status(404).send('Request not found or already processed');
-      }
-  
-      // Check if the agent has enough balance
-      if (agent.balance < request.amount) {
-        return res.status(400).send('Agent does not have enough balance');
-      }
-  
-      // Update user's balance and request status
-      const user = await usersCollection.findOneAndUpdate(
-        { mobileNumber: request.fromUser },
-        { $inc: { balance: request.amount } },
-        { new: true }
-      );
-  
-      if (!user) {
-        return res.status(404).send('User not found');
-      }
-  
-      // Deduct from agent's balance and update request status
-      request.status = 'approved';
-      agent.balance -= request.amount;
-  
-      await agent.save();
-  
-      return res.status(200).send('Cash-in approved successfully');
-    } catch (error) {
-      console.error('Approve cash-in error:', error);
-      return res.status(500).send('Server error');
-    }
-  });
-  // ------------------------------
+
   // ------------------------------
   // 
   app.post('/transactions', async (req, res) => {
@@ -375,7 +327,116 @@ client.connect()
 
   // ------------------------------
 
+  // ------------------------------
 
+app.post('/request', async (req, res) => {
+    const userEmail = req.headers.email;
+
+    if (!userEmail) {
+        return res.status(400).send('Email is required');
+    }
+
+    try {
+        // Find the user by email
+        const user = await usersCollection.findOne({ email: userEmail });
+        if (!user) {
+            return res.status(404).send('User not found');
+        }
+
+        // Extract transactions from the user's data
+        const requests = user.requests || [];
+
+        return res.status(200).json(requests);
+    } catch (error) {
+        console.error('Error fetching transactions:', error);
+        return res.status(500).send('Server error');
+    }
+});
+  // ------------------------------
+
+  app.post("/handleRequest", async (req, res) => {
+    const { requestNumber, requestAmount, action } = req.body;
+    const userEmail = req.headers.email;
+  
+    if (!userEmail) {
+      return res.status(400).send('Email is required');
+    }
+  
+    try {
+      // Find the requesting user by their mobile number
+      const user = await usersCollection.findOne({ mobileNumber: requestNumber });
+      if (!user) {
+        return res.status(404).send('User not found');
+      }
+  
+      // Find the agent by their email
+      const agent = await usersCollection.findOne({ email: userEmail });
+      if (!agent) {
+        return res.status(404).send('Agent not found');
+      }
+  
+      if (action === 'approve') {
+        // check the user have enough amount
+        if (user.balance < requestAmount) {
+          return res.status(400).send('Insufficient balance');
+        }
+        // Update the user's balance
+        await usersCollection.updateOne(
+          { mobileNumber: requestNumber },
+          { $inc: { balance: requestAmount } } 
+        );
+  
+        await usersCollection.updateOne(
+          { email: userEmail },
+          { $inc: { balance: -requestAmount } }
+        );
+        // delete the request 
+        await usersCollection.updateOne(
+          { email: userEmail },
+          { $pull: { requests: { fromUser: requestNumber} } } 
+        );
+        // add the translation history for the agents
+        const transaction = {
+          type: 'cash-in-agent',
+          toUser: requestNumber,
+          amount: requestAmount,
+          date: new Date(),
+        };
+        await usersCollection.updateOne(
+          { email: userEmail },
+          { $push: { transactions: transaction } }
+        );
+        // add the translation history for the user
+        const transactionUser = {
+          type: 'cash-in-user',
+          toAgent: agent.mobileNumber,
+          amount: requestAmount,
+          date: new Date(),
+        };
+        await usersCollection.updateOne(
+          { mobileNumber: requestNumber },
+          { $push: { transactions: transactionUser } }
+        );
+        return res.status(200).send('Approve successfully');
+  
+      } else if (action === 'deny') {
+        // Remove the request from the agent's requests list
+        await usersCollection.updateOne(
+          { email: userEmail },
+          { $pull: { requests: { fromUser: requestNumber} } } 
+        );
+        return res.status(200).send('Deny successfully');
+  
+      } else {
+        return res.status(400).send('Invalid action');
+      }
+    } catch (error) {
+      console.error('Error handling request:', error);
+      return res.status(500).send('Server error');
+    }
+  });
+  
+  
 
 
 
