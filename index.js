@@ -36,9 +36,27 @@ client.connect()
         expiresIn: '1h', // Token expires in 1 hour
       });
     };
+// ------------verifyToken-------------
+    const verifyToken = (req, res, next) => {
+      const token = req.header('Authorization')?.replace('Bearer ', '');
+      if (!token) {
+        return res.status(401).send('Unauthorized access denied');
+      }
+    
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
+      } catch (ex) {
+        if (ex.name === 'TokenExpiredError') {
+          return res.status(401).send('Session expired');
+        }
+        res.status(400).send('Unauthorized access denied');
+      }
+    };
 
     // Routes
-    app.get('/', (req, res) => {
+    app.get('/', (req, res) => {      
       res.send('QuickPay Wallet Server Is Running');
     });
 
@@ -67,12 +85,12 @@ client.connect()
     });
 
     // get all users
-    app.get("/users", async (req, res) => {
+    app.get("/users",verifyToken, async (req, res) => {
       const users = await usersCollection.find().toArray();
       res.send(users);
     });
      // Get user by email
-  app.get("/users/:email", async (req, res) => {
+  app.get("/users/:email",verifyToken, async (req, res) => {
     const email = req.params.email;
     const query = { email };
     const result = await usersCollection.findOne(query);
@@ -82,7 +100,7 @@ client.connect()
   // ------------------------------
   // Send Money
 
- app.post('/sendMoney', async (req, res) => {
+ app.post('/sendMoney',verifyToken, async (req, res) => {
   const { receiverNumber, amount: amountStr, pin } = req.body;
   const senderEmail = req.headers.email;
 
@@ -170,7 +188,7 @@ client.connect()
 
   // ------------------------------
   // Withdraw Money
-  app.post('/withdrawMoney', async (req, res) => {
+  app.post('/withdrawMoney',verifyToken,  async (req, res) => {
     const { senderId, agentNumber, amount: amountStr, pin } = req.body;
     const senderEmail = req.headers.email;
   
@@ -256,7 +274,7 @@ client.connect()
 
   // ------------------------------
   // Cash In Request-------
-  app.post('/cashInRequest', async (req, res) => {
+  app.post('/cashInRequest',verifyToken, async (req, res) => {
     const { amount: amountStr, agentNumber } = req.body;
     const senderEmail = req.headers.email;
   
@@ -301,7 +319,7 @@ client.connect()
 
   // ------------------------------
   // 
-  app.post('/transactions', async (req, res) => {
+  app.post('/transactions',verifyToken, async (req, res) => {
     const userEmail = req.headers.email;
   
     if (!userEmail) {
@@ -329,7 +347,7 @@ client.connect()
 
   // ------------------------------
 
-app.post('/request', async (req, res) => {
+app.post('/request',verifyToken, async (req, res) => {
     const userEmail = req.headers.email;
 
     if (!userEmail) {
@@ -354,7 +372,7 @@ app.post('/request', async (req, res) => {
 });
   // ------------------------------
 
-  app.post("/handleRequest", async (req, res) => {
+  app.post("/handleRequest",verifyToken, async (req, res) => {
     const { requestNumber, requestAmount, action } = req.body;
     const userEmail = req.headers.email;
   
@@ -459,7 +477,7 @@ app.post('/request', async (req, res) => {
       res.send({ token });
     });
 // Example of enhanced error handling in protected route
-app.get('/protected', (req, res) => {
+app.get('/protected',verifyToken, (req, res) => {
   const token = req.header('Authorization').replace('Bearer ', '');
 
   if (!token) {
