@@ -60,35 +60,128 @@ client.connect()
       res.send('QuickPay Wallet Server Is Running');
     });
 
-    // Register user
-    app.post("/users", async (req, res) => {
-      try {
-        const newUser = req.body;
+// Register user
+app.post("/register", async (req, res) => {
+  try {
+    const newUser = req.body;
+    console.log(newUser); // Debugging: Remove in production
 
-        // Hash the password
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(newUser.pin, salt);
+    // Validate the incoming data
+    if (!newUser.name || !newUser.email || !newUser.mobileNumber || !newUser.pin || !newUser.role || newUser.balance === undefined) {
+      return res.status(400).send('All fields are required');
+    }
 
-        // Replace the plain text password with the hashed password
-        newUser.pin = hashedPassword;
+    // Check if email or mobile number already exists
+    const existingUser = await usersCollection.findOne({
+      $or: [
+        { email: newUser.email },
+        { mobileNumber: newUser.mobileNumber }
+      ]
+    });
 
-        const result = await usersCollection.insertOne(newUser);
-        if (result.insertedId) {
-          const token = generateToken(newUser);
-          res.send({ token });
-        } else {
-          res.status(500).send('Error creating new user');
-        }
-      } catch (error) {
-        res.status(500).send('Error creating new user');
+    if (existingUser) {
+      return res.status(400).send('Email or mobile number already exists');
+    }
+
+    // Hash the password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newUser.pin, salt);
+    newUser.pin = hashedPassword;
+
+    // Insert the new user into the database
+    const result = await usersCollection.insertOne(newUser);
+    if (result.insertedId) {
+      const token = generateToken(newUser); // Ensure generateToken function exists
+      res.status(201).send({ token });
+    } else {
+      res.status(500).send('Error creating new user');
+    }
+  } catch (error) {
+    console.error('Error creating new user:', error);
+    res.status(500).send('Error creating new user');
+  }
+});
+
+
+
+
+
+    // User login
+    app.post('/login', async (req, res) => {
+      const { email, pin } = req.body;
+      const user = await usersCollection.findOne({ email });
+
+      if (!user) {
+        return res.status(400).send('User not found');
       }
+
+      if(user.status === 'blocked' || user.status === 'pending'){
+        return res.status(403).send('Your account is blocked or pending');
+      }
+
+      const isMatch = await bcrypt.compare(pin, user.pin);
+
+      if (!isMatch) {
+        return res.status(400).send('Invalid credentials');
+      }
+
+      const token = generateToken(user);
+      res.send({ token });
     });
 
     // get all users
-    app.get("/users",verifyToken, async (req, res) => {
-      const users = await usersCollection.find().toArray();
-      res.send(users);
-    });
+    // app.get('/all-users', async (req, res) => {
+    //   const users = await usersCollection.find().toArray();
+    //   res.send(users);
+    // });
+    app.post('/users', async (req, res) => {
+      try {
+          const users = await usersCollection.find().toArray();
+          res.send(users);
+      } catch (error) {
+          res.status(500).send({ message: error.message });
+      }
+  });
+
+  // update user status
+  app.patch('/users/:id/status', async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const result = await usersCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status } }
+    );
+
+    if (result.modifiedCount > 0) {
+        res.send({ message: 'Status updated successfully' });
+    } else {
+        res.status(400).send({ message: 'Failed to update status' });
+    }
+});
+
+  // Check for existing users
+  app.post("/check-users", async (req, res) => {
+    try {
+      const { email, mobileNumber } = req.body;
+  
+      // Check if email or mobile number already exists
+      const existingUsers = await usersCollection.find({
+        $or: [
+          { email: email },
+          { mobileNumber: mobileNumber }
+        ]
+      }).toArray();
+  
+      const emailExists = existingUsers.some(user => user.email === email);
+      const mobileNumberExists = existingUsers.some(user => user.mobileNumber === mobileNumber);
+  
+      res.send({ emailExists, mobileNumberExists });
+    } catch (error) {
+      res.status(500).send('Error checking user existence');
+    }
+  });
+  
      // Get user by email
   app.get("/users/:email",verifyToken, async (req, res) => {
     const email = req.params.email;
@@ -153,7 +246,7 @@ client.connect()
       date: new Date(),
       senderNumber,
       amount,
-      fee: 0, // No fee applied to the receiver
+      fee: 0, 
       totalAmount: amount,
       type: 'credit'
     };
@@ -456,26 +549,6 @@ app.post('/request',verifyToken, async (req, res) => {
   
   
 
-
-
-    // User login
-    app.post('/login', async (req, res) => {
-      const { email, pin } = req.body;
-      const user = await usersCollection.findOne({ email });
-
-      if (!user) {
-        return res.status(400).send('User not found');
-      }
-
-      const isMatch = await bcrypt.compare(pin, user.pin);
-
-      if (!isMatch) {
-        return res.status(400).send('Invalid credentials');
-      }
-
-      const token = generateToken(user);
-      res.send({ token });
-    });
 // Example of enhanced error handling in protected route
 app.get('/protected',verifyToken, (req, res) => {
   const token = req.header('Authorization').replace('Bearer ', '');
