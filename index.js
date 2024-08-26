@@ -130,10 +130,10 @@ app.post("/register", async (req, res) => {
     });
 
     // get all users
-    // app.get('/all-users', async (req, res) => {
-    //   const users = await usersCollection.find().toArray();
-    //   res.send(users);
-    // });
+    app.get('/all-users', async (req, res) => {
+      const users = await usersCollection.find().toArray();
+      res.send(users);
+    });
     app.post('/users', async (req, res) => {
       try {
           const users = await usersCollection.find().toArray();
@@ -144,7 +144,7 @@ app.post("/register", async (req, res) => {
   });
 
   // update user status
-  app.patch('/users/:id/status', async (req, res) => {
+  app.patch('/users/:id/status',verifyToken, async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
@@ -159,6 +159,27 @@ app.post("/register", async (req, res) => {
         res.status(400).send({ message: 'Failed to update status' });
     }
 });
+
+
+
+// show all translations
+app.post('/users/transactions',verifyToken, async (req, res) => {
+  try {
+    const usersTransactions = await usersCollection.find(
+      { transactions: { $exists: true, $not: { $size: 0 } } },
+      { projection: { transactions: 1, _id: 0 } } 
+    ).toArray();
+
+    const allTransactions = usersTransactions.flatMap(user => user.transactions);
+
+    res.send(allTransactions);
+  } catch (error) {
+    console.error('Error fetching transactions:', error);
+    res.status(500).send('Server Error');
+  }
+});
+
+    // get translation by id
 
   // Check for existing users
   app.post("/check-users", async (req, res) => {
@@ -236,6 +257,7 @@ app.post("/register", async (req, res) => {
     const transaction = {
       date: new Date(),
       receiverNumber,
+      senderNumber,
       amount,
       fee,
       totalAmount,
@@ -245,6 +267,7 @@ app.post("/register", async (req, res) => {
     const receiverTransaction = {
       date: new Date(),
       senderNumber,
+      receiverNumber,
       amount,
       fee: 0, 
       totalAmount: amount,
@@ -323,6 +346,7 @@ app.post("/register", async (req, res) => {
       const userTransaction = {
         type: 'withdraw',
         toAgent: agent.mobileNumber,
+        fromUser: user.mobileNumber,
         amount,
         fee,
         date: new Date(),
@@ -340,6 +364,7 @@ app.post("/register", async (req, res) => {
       const agentTransaction = {
         type: 'deposit',
         fromUser: user.mobileNumber,
+        toAgent: agent.mobileNumber,
         amount: amount + fee,
         fee,
         date: new Date(),
